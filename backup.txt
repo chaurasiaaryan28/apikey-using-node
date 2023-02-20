@@ -1,0 +1,203 @@
+const jwt=require('jsonwebtoken')
+const dotenv= require('dotenv')
+const express = require('express')
+const bodyparser = require('body-parser')
+const { response } = require('express')
+dotenv.config()
+const app = express()
+const port = 3005
+const bcrypt = require("bcrypt")
+const { json } = require('body-parser')
+const { resolve } = require('path')
+app.use(express.json())
+app.use(express.urlencoded({ extended: true }));
+
+    
+
+
+
+const Pool = require('pg').Pool
+const pool= new Pool({
+
+    user:'aryan',
+    host:'localhost',
+    database:'aryan',
+    password:'admin',
+    port:5432,
+})
+
+const hashing = async (pass)=>{   // hashing function
+
+    const salt = await bcrypt.genSalt();
+    const password = await bcrypt.hash(pass,salt)
+    return password
+
+}
+
+const authenticatetoken = (token)=>{    //token varification function
+
+                                       return jwt.verify(token,process.env.SECRET_KEY)
+                                        
+                                    }
+                                    
+                                    
+                                
+
+const verify_valid_taken = async (token)=>{
+   
+   
+    const boolean = await pool.query('SELECT token FROM blaclist where token = $1 ',[token],(err,result)=>{
+    console.log(result.rowCount);
+    if(result.rowCount==0){
+        return resolve(result)
+    }
+    else return true
+        
+    })
+
+
+}
+const TKN="yJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0aW1lIjoiV2VkIEZlYiAwOCAyMDIzIDE5OjAzOjA1IEdNVCswNTMwIChJbmRpYSBTdGFuZGFyZCBUaW1lKSIsIklEIjp7InVzZXJuYW1lIjoiY2hhdXJhc2lhYXJ5YW4iLCJwYXNzd29yZCI6IiQyYiQxMCQuRmVIb0l4enlGLnAyR2xSMVIvU3h1UVJnb0QvTU9nSlViZVJJbERSQ0RJRHhxMEx4YlN3TyJ9LCJpYXQiOjE2NzU4NjMxODV9.a3uR5_J6LDtTqUdXtSqaj1cYK5HWI7Lcwx_4foIag6w"
+
+
+
+
+app.get('/users',(request,response)=>{ // get method
+    pool.query('select * from user1',(error,results)=>{
+        if(error){
+            throw error
+    }
+    response.status(200).json(results.rows)
+})}
+)
+
+app.post('/SignUp',(request,response)=>{
+                                                 // sign up route
+    const id = parseInt(request.body['id'])
+    const username = request.body['username']
+    const password = request.body['password']
+    let hash_password
+    hashing(password).then((hash_password)=>{
+    console.log(hash_password)
+    pool.query('INSERT INTO user1(id,username,password) values($1,$2,$3 ) RETURNING *',[id,username,hash_password],(error,results)=>{
+        if(error){
+            throw error
+        }
+        response.status(200).send(`user Signed-Up with ID: ${results.rows[0].id}`)
+    })
+})
+})
+
+
+
+
+  app.post('/log',(request,response)=>{
+    
+    const username = request.body['username']  // log
+    const password = request.body['password']
+    if(!username){ return response.status(200).send("username empty")}
+    else { 
+        pool.query('SELECT username,password from user1 where username = $1',[username],(error,result)=>{
+            
+            if(error){
+                return response.status(500).send('DB error')
+            }
+            else {
+            const USERNAME = result.rows[0].username
+            
+            const PASS = result.rows[0].password
+            if(!USERNAME){ return response.status(200).send('Username Does not exits')}
+            else {
+                    bcrypt.compare(password,PASS,(err,res)=>{
+                    if(res==true)
+                    {
+                        let secret_key=process.env.SECRET_KEY
+                        let data = {
+                                    time:Date(),
+                                    ID:result.rows[0]
+                                    }
+                        token = jwt.sign(data,secret_key);
+                        return response.json({'password status':'matched',
+                                              'Token':token
+                                             })
+
+                    }
+                    else return response.status(200).send('password does not matched')
+                     })
+                }
+
+                }
+            })
+        
+        }
+
+  
+})
+
+
+app.post('/posts',(request,response)=>{
+    
+    const auth_header = request.headers['authorization']
+    if (auth_header)
+    {    
+       token =auth_header.split(' ')[1]
+       
+        if(token == null){
+            return response.status(200).send(' token does not exits')
+            }
+            else{
+
+                    pool.query('SELECT token FROM blaclist where token = $1 ',[token],(err,result)=>{
+                    if(result.rowCount==0){
+                   
+                
+                    if(authenticatetoken(token))
+                    {   
+                        
+
+                        const name = request.body['name']
+                        const description = request.body['description']
+                        pool.query('INSERT INTO post(name,description) values ($1 , $2)',[name,description],(err,res)=>{
+
+                            response.json({
+                                            'message':'post added successfully'
+                                        })
+                        })
+                    }
+                }
+                else return response.json({
+                    'message':'token blacklisted'
+                })
+            
+                })   }
+        
+    }
+
+  
+    
+})
+
+
+
+app.post('/logout',(request,response)=>{
+        const auth_header=request.headers['authorization']
+        token = auth_header.split(' ')[1]
+        if(authenticatetoken(token)){
+        pool.query('Insert into blaclist(token) values ($1)',[token],(err,result)=>{
+                    if(result){
+                        return response.json({
+                            'token':'blacklisted'
+                        })
+                    }
+                    else if(err) throw(error)
+
+        })
+    }
+})
+
+
+
+
+app.listen(port, () => {
+    console.log(`App running on port ${port}.`)
+  })
