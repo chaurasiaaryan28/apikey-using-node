@@ -72,6 +72,8 @@ app.post('/register',(request,response)=>{
             }
             else{
 
+
+                
                     response.status(200).send(`User registered succesfully`)
             }
         })
